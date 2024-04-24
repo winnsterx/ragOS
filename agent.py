@@ -28,12 +28,22 @@ class Agent:
     # Settings.embed_model = resolve_embed_model("local:BAAI/bge-small-en-v1.5")
     # Settings.llm = Ollama(model="llama3", request_timeout=100)
 
-    def __init__(self, llm_model="llama3", embed_model="local:BAAI/bge-small-en-v1.5"):
+    def __init__(self, llm_model="llama3", embed_model="local:BAAI/bge-small-en-v1.5", mode="context", system_prompt="You are a helpful, calm, succinct chatbot. Please always use the tools provided to answer a question. Do not rely on prior knowledge."):
         self.db = chromadb.PersistentClient()
         self.embed_model = resolve_embed_model(embed_model=embed_model)
         self.llm = Ollama(model=llm_model, request_timeout=100)
         self.embed_model_str = embed_model
         self.llm_str = llm_model
+        self.mode = mode
+        collections = self.db.list_collections()
+        if mode == "condense_question":
+            router_query_engine = self.build_router_query_engine(collections)
+            self.chat_engine = CondenseQuestionChatEngine.from_defaults(
+                query_engine=router_query_engine, llm=self.llm, verbose=True, system_prompt=system_prompt)
+        elif mode == "context":
+            router_retriever = self.build_router_retriever(collections)
+            self.chat_engine = ContextChatEngine.from_defaults(
+                retriever=router_retriever, llm=self.llm, verbose=True, system_prompt=system_prompt)
 
     def scrape_web_pages(self, url, max_depth=2):
         start = time.process_time()
@@ -63,8 +73,8 @@ class Agent:
 
     def create_collection(self, name, documents, description):
         """
-        Creates a new collection in Chroma persistent DB, 
-        creates a vector index from new documents, 
+        Creates a new collection in Chroma persistent DB,
+        creates a vector index from new documents,
         stores the index in storage by changing the default to storage context
         """
         collection = self.db.get_or_create_collection(
@@ -79,40 +89,39 @@ class Agent:
         return index
 
     def build_router_query_engine(self, collections):
-        print("collections: ", collections)
         tools = []
         for c in collections:
-            print("collection:", c)
             index = self.load_collection(c.name)
             tool = QueryEngineTool.from_defaults(
                 query_engine=index.as_query_engine(llm=self.llm, streaming=True), description=c.metadata["description"])
-            print("Tool:", tool.metadata)
+            logger.info("Tool: %s", tool.metadata)
             tools.append(tool)
         router_query_engine = RouterQueryEngine(
-            selector=LLMSingleSelector.from_defaults(llm=self.llm), query_engine_tools=tools, llm=self.llm, verbose=True)
+            selector=LLMMultiSelector.from_defaults(llm=self.llm), query_engine_tools=tools, llm=self.llm, verbose=True)
         return router_query_engine
 
     def build_router_retriever(self, collections):
-        print("collections: ", collections)
         tools = []
         for c in collections:
             index = self.load_collection(c.name)
             tool = RetrieverTool.from_defaults(
                 retriever=index.as_retriever(), description=c.metadata["description"])
+            logger.info("Tool: %s", tool.metadata)
             tools.append(tool)
         router_retriever = RouterRetriever.from_defaults(
-            retriever_tools=tools, llm=self.llm, selector=LLMSingleSelector.from_defaults(llm=self.llm))
+            retriever_tools=tools, llm=self.llm, selector=LLMMultiSelector.from_defaults(llm=self.llm))
         return router_retriever
 
-    def start(self):
+    def start(self, mode="context", system_prompt="You are a helpful, calm, succinct chatbot. Please always use the tools provided to answer a question. Do not rely on prior knowledge."):
         collections = self.db.list_collections()
-        router_query_engine = self.build_router_query_engine(collections)
-        # router_retriever = self.build_router_retriever(collections)
-
-        chat_engine = CondenseQuestionChatEngine.from_defaults(
-            query_engine=router_query_engine, llm=self.llm, verbose=True)
-        # chat_engine = ContextChatEngine.from_defaults(
-        #     retriever=router_retriever, llm=self.llm, verbose=True)
+        if mode == "condense_question":
+            router_query_engine = self.build_router_query_engine(collections)
+            chat_engine = CondenseQuestionChatEngine.from_defaults(
+                query_engine=router_query_engine, llm=self.llm, verbose=True, system_prompt=system_prompt)
+        elif mode == "context":
+            router_retriever = self.build_router_retriever(collections)
+            chat_engine = ContextChatEngine.from_defaults(
+                retriever=router_retriever, llm=self.llm, verbose=True, system_prompt=system_prompt)
 
         while True:
             prompt = input("What do wanna ask me?\n")
@@ -127,3 +136,20 @@ class Agent:
         # RouterQueryEngines takes in all the indexes that are in the db and determines which one to use
         # ChatEngine uses this query engine
         # starting off with creating a collection in db first
+
+    def create_index_from_url(self, url, max_depth, collection_name, collection_description):
+        documents = self.scrape_web_pages(url, max_depth)
+        vector_index = self.create_collection(
+            collection_name, documents, collection_description)
+        return vector_index
+
+    def update_router_with_new_index(self):
+        collections = self.db.list_collections()
+        if self.mode == "condense_question":
+            router_query_engine = self.build_router_query_engine(collections)
+            self.chat_engine = CondenseQuestionChatEngine.from_defaults(
+                query_engine=router_query_engine, llm=self.llm, verbose=True, system_prompt=system_prompt)
+        elif self.mode == "context":
+            router_retriever = self.build_router_retriever(collections)
+            self.chat_engine = ContextChatEngine.from_defaults(
+                retriever=router_retriever, llm=self.llm, verbose=True, system_prompt=system_prompt)

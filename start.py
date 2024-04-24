@@ -68,15 +68,18 @@ def create_vector_index(fresh_scrape, db_name, documents=[]):
 
 if __name__ == "__main__":
     os = Agent()
-    url1 = "https://en.wikipedia.org/wiki/Paul_Graham_(programmer)"
-    url2 = "https://en.wikipedia.org/wiki/Awkwafina"
-    doc1 = os.scrape_web_pages(url1)
-    doc2 = os.scrape_web_pages(url2)
-    os.create_collection(
-        "paul_graham", documents=doc1, description="Use this to get overview of Paul Graham's life")
-    os.create_collection(
-        "awkwafina", documents=doc2, description="Use this to get overview of Awkwafina's life")
-
+    # url1 = "https://en.wikipedia.org/wiki/Paul_Graham_(programmer)"
+    # url2 = "https://en.wikipedia.org/wiki/Awkwafina"
+    # url3 = "https://en.wikipedia.org/wiki/Vin_Diesel"
+    # doc1 = os.scrape_web_pages(url1)
+    # doc2 = os.scrape_web_pages(url2)
+    # doc3 = os.scrape_web_pages(url3)
+    # os.create_collection(
+    #     "paul_graham", documents=doc1, description="Use this to get overview of Paul Graham's life")
+    # os.create_collection(
+    #     "awkwafina", documents=doc2, description="Use this to get overview of Awkwafina's life")
+    # os.create_collection(
+    #     "vin_diesel", documents=doc3, description="Use this to get overview of Vin Diesel's life")
     os.start()
     # fresh_scrape = True
     # print(db.list_collections())
