@@ -1,5 +1,6 @@
 import streamlit as st
 from agent import Agent
+from io import StringIO
 
 st.title("🧿 ragOS 🧿")
 st.caption("🚀 Local, personalized chatbot powered by your local LLM")
@@ -36,15 +37,27 @@ with st.sidebar:
                 print("these values: ", url, int(max_depth), name, description)
                 st.session_state.agent.create_index_from_url(
                     url, int(max_depth), name, description)
+                st.session_state.agent.update_router_with_collections()
 
     with st.expander("Upload file"):
-        st.file_uploader("drop file here", label_visibility="collapsed")
+        with st.form("Add file"):
+            description = st.text_input("describe the file")
+            name = st.text_input("name the file")
+            file = st.file_uploader(
+                "drop file here", label_visibility="collapsed")
+            submitted = st.form_submit_button("Upload!")
+            if file is not None:
+                if submitted:
+                    text = StringIO(file.getvalue().decode("utf-8")).read()
+                    st.session_state.agent.create_index_from_file(
+                        text, name, description)
+                    st.session_state.agent.update_router_with_collections()
 
     with st.expander("Current RAG collections in usage"):
         collections = st.session_state.agent.db.list_collections()
         for c in collections:
             st.write(c)
-            st.divider()  # 👈 Draws a horizontal rule
+            st.divider()
 
 for msg in st.session_state["messages"]:
     st.chat_message(msg["role"]).write(msg["content"])
@@ -53,7 +66,6 @@ for msg in st.session_state["messages"]:
 print("length", st.session_state)
 
 if prompt := st.chat_input():
-
     print("agent: ", st.session_state["agent"])
     write_and_add_msg_to_history("user", prompt)
     response = st.session_state["agent"].chat_engine.chat(prompt)

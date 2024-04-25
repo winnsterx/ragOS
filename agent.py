@@ -1,4 +1,4 @@
-
+from custom_retriever import CustomRetriever
 import chromadb
 from llama_index.core import SimpleDirectoryReader, Settings, VectorStoreIndex, SummaryIndex, Document, StorageContext, load_index_from_storage, get_response_synthesizer
 from llama_index.core.storage.docstore import SimpleDocumentStore
@@ -6,7 +6,7 @@ from llama_index.core.vector_stores import SimpleVectorStore
 from llama_index.core.storage.index_store import SimpleIndexStore
 from llama_index.core.tools import QueryEngineTool, RetrieverTool
 from llama_index.core.query_engine import RouterQueryEngine
-from llama_index.core.retrievers import RouterRetriever
+from llama_index.core.retrievers import RouterRetriever, VectorIndexRetriever
 from llama_index.core.selectors import LLMSingleSelector, LLMMultiSelector
 from llama_index.core.embeddings import resolve_embed_model
 from llama_index.core.memory import ChatMemoryBuffer
@@ -14,6 +14,7 @@ from llama_index.core.chat_engine import ContextChatEngine, CondenseQuestionChat
 from llama_index.llms.ollama import Ollama
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from langchain_community.document_loaders.recursive_url_loader import RecursiveUrlLoader
+
 from bs4 import BeautifulSoup
 import time
 import logging
@@ -35,15 +36,20 @@ class Agent:
         self.embed_model_str = embed_model
         self.llm_str = llm_model
         self.mode = mode
+        self.system_prompt = system_prompt
+        self.update_router_with_collections()
+
+    def update_router_with_collections(self):
         collections = self.db.list_collections()
-        if mode == "condense_question":
+        if self.mode == "condense_question":
             router_query_engine = self.build_router_query_engine(collections)
             self.chat_engine = CondenseQuestionChatEngine.from_defaults(
-                query_engine=router_query_engine, llm=self.llm, verbose=True, system_prompt=system_prompt)
-        elif mode == "context":
+                query_engine=router_query_engine, llm=self.llm, verbose=True)
+        elif self.mode == "context":
             router_retriever = self.build_router_retriever(collections)
+            custom_retriever = CustomRetriever(router_retriever)
             self.chat_engine = ContextChatEngine.from_defaults(
-                retriever=router_retriever, llm=self.llm, verbose=True, system_prompt=system_prompt)
+                retriever=custom_retriever, llm=self.llm, verbose=True, system_prompt=self.system_prompt)
 
     def scrape_web_pages(self, url, max_depth=2):
         start = time.process_time()
@@ -104,52 +110,28 @@ class Agent:
         tools = []
         for c in collections:
             index = self.load_collection(c.name)
+            # retriever = VectorIndexRetriever(
+            #     index=index, similarity_top_k=3, embed_model=self.embed_model, )
             tool = RetrieverTool.from_defaults(
                 retriever=index.as_retriever(), description=c.metadata["description"])
             logger.info("Tool: %s", tool.metadata)
             tools.append(tool)
         router_retriever = RouterRetriever.from_defaults(
             retriever_tools=tools, llm=self.llm, selector=LLMMultiSelector.from_defaults(llm=self.llm))
+        """
+        need to build a custom retriever that 
+        if res := router_retriever.retrieve() == []:
+            res = "nothing relevant in the database" 
+        """
         return router_retriever
 
-    def start(self, mode="context", system_prompt="You are a helpful, calm, succinct chatbot. Please always use the tools provided to answer a question. Do not rely on prior knowledge."):
-        collections = self.db.list_collections()
-        if mode == "condense_question":
-            router_query_engine = self.build_router_query_engine(collections)
-            chat_engine = CondenseQuestionChatEngine.from_defaults(
-                query_engine=router_query_engine, llm=self.llm, verbose=True, system_prompt=system_prompt)
-        elif mode == "context":
-            router_retriever = self.build_router_retriever(collections)
-            chat_engine = ContextChatEngine.from_defaults(
-                retriever=router_retriever, llm=self.llm, verbose=True, system_prompt=system_prompt)
-
-        while True:
-            prompt = input("What do wanna ask me?\n")
-            if 'quit' == prompt:
-                break
-            response = chat_engine.stream_chat(prompt)
-            for token in response.response_gen:
-                print(token, end="")
-            print("\n")
-
-        # create RouterChatEngine with RouterQueryEngine
-        # RouterQueryEngines takes in all the indexes that are in the db and determines which one to use
-        # ChatEngine uses this query engine
-        # starting off with creating a collection in db first
-
-    def create_index_from_url(self, url, max_depth, collection_name, collection_description):
+    def create_index_from_url(self, url: str, max_depth: int, collection_name: str, collection_description: str) -> None:
         documents = self.scrape_web_pages(url, max_depth)
-        vector_index = self.create_collection(
+        self.create_collection(
             collection_name, documents, collection_description)
-        return vector_index
 
-    def update_router_with_new_index(self):
-        collections = self.db.list_collections()
-        if self.mode == "condense_question":
-            router_query_engine = self.build_router_query_engine(collections)
-            self.chat_engine = CondenseQuestionChatEngine.from_defaults(
-                query_engine=router_query_engine, llm=self.llm, verbose=True, system_prompt=system_prompt)
-        elif self.mode == "context":
-            router_retriever = self.build_router_retriever(collections)
-            self.chat_engine = ContextChatEngine.from_defaults(
-                retriever=router_retriever, llm=self.llm, verbose=True, system_prompt=system_prompt)
+    def create_index_from_file(self, file_text: str, collection_name: str, collection_description: str) -> None:
+        document = Document(text=file_text, metadata={
+            "description": collection_description, "name": collection_name})
+        self.create_collection(
+            collection_name, [document], collection_description)
