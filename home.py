@@ -2,6 +2,7 @@ import streamlit as st
 from agent import Agent
 from io import StringIO
 
+
 st.title("🧿 ragOS 🧿")
 st.caption("🚀 Local, personalized chatbot powered by your local LLM")
 
@@ -39,6 +40,22 @@ with st.sidebar:
                     url, int(max_depth), name, description)
                 st.session_state.agent.update_router_with_collections()
 
+    with st.expander("Paste Notion page ID"):
+        with st.form("Get page ID"):
+            # page_id = st.text_input("page id")
+            # name = st.text_input("name the collection")
+            # description = st.text_input("describe the collection")
+
+            page_id = "c614ed1b7f5540928f94b5b559cdd636"
+            name = "winnies_misc_thoughts_notes"
+            description = "Use this to understand miscellaneous thoughts of Winnie"
+            submitted = st.form_submit_button("Get page!")
+            if submitted:
+                print("these values: ", page_id)
+                st.session_state.agent.create_index_from_notion_page(
+                    page_id, name, description)
+                st.session_state.agent.update_router_with_collections()
+
     with st.expander("Upload file"):
         with st.form("Add file"):
             description = st.text_input("describe the file")
@@ -69,5 +86,11 @@ if prompt := st.chat_input():
     print("agent: ", st.session_state["agent"])
     write_and_add_msg_to_history("user", prompt)
     response = st.session_state["agent"].chat_engine.chat(prompt)
+
+    for n in response.source_nodes:
+        st.chat_message("assistant").write(n.node.id_)
+        st.chat_message("assistant").write(n.score)
+        st.chat_message("assistant").write(n.node.text)
+
     write_and_add_msg_to_history("assistant", response.response)
     # write_and_add_msg_to_history("assistant", "response.response")

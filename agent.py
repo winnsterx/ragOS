@@ -12,14 +12,18 @@ from llama_index.core.embeddings import resolve_embed_model
 from llama_index.core.memory import ChatMemoryBuffer
 from llama_index.core.chat_engine import ContextChatEngine, CondenseQuestionChatEngine
 from llama_index.llms.ollama import Ollama
+from llama_index.readers.notion import NotionPageReader
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from langchain_community.document_loaders.recursive_url_loader import RecursiveUrlLoader
 
 from bs4 import BeautifulSoup
 import time
+import os
+from dotenv import load_dotenv
 import logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+load_dotenv()
 
 
 # Settings need to be
@@ -29,12 +33,10 @@ class Agent:
     # Settings.embed_model = resolve_embed_model("local:BAAI/bge-small-en-v1.5")
     # Settings.llm = Ollama(model="llama3", request_timeout=100)
 
-    def __init__(self, llm_model="llama3", embed_model="local:BAAI/bge-small-en-v1.5", mode="context", system_prompt="You are a helpful, calm, succinct chatbot. Please always use the tools provided to answer a question. Do not rely on prior knowledge."):
-        self.db = chromadb.PersistentClient()
-        self.embed_model = resolve_embed_model(embed_model=embed_model)
+    def __init__(self, llm_model="llama3", embed_model="local:Salesforce/SFR-Embedding-Mistral", mode="context", system_prompt="You are a helpful, calm, succinct chatbot. Please always use the tools provided to answer a question. Do not rely on prior knowledge."):
+        self.db = chromadb.PersistentClient(path="./chroma")
         self.llm = Ollama(model=llm_model, request_timeout=100)
-        self.embed_model_str = embed_model
-        self.llm_str = llm_model
+        self.embed_model = embed_model
         self.mode = mode
         self.system_prompt = system_prompt
         self.update_router_with_collections()
@@ -47,7 +49,7 @@ class Agent:
                 query_engine=router_query_engine, llm=self.llm, verbose=True)
         elif self.mode == "context":
             router_retriever = self.build_router_retriever(collections)
-            custom_retriever = CustomRetriever(router_retriever)
+            custom_retriever = CustomRetriever(router_retriever, self.llm)
             self.chat_engine = ContextChatEngine.from_defaults(
                 retriever=custom_retriever, llm=self.llm, verbose=True, system_prompt=self.system_prompt)
 
@@ -63,6 +65,14 @@ class Agent:
                      for p in pages]
         return documents
 
+    def create_index_from_notion_page(self, page_id, name, description):
+        notion_integration_token = os.getenv("NOTION_INTEGRATIONS_TOKEN")
+        documents = NotionPageReader(
+            integration_token=notion_integration_token).load_data(page_ids=[page_id])
+        print("Notion docs", documents)
+        self.create_collection(
+            name, documents, description)
+
     def load_collection(self, name):
         """
         Loads existing collection with name from chroma db and
@@ -74,7 +84,7 @@ class Agent:
         storage_context = StorageContext.from_defaults(
             vector_store=vector_store)
         index = VectorStoreIndex.from_vector_store(
-            vector_store, storage_context=storage_context, embed_model=self.embed_model_str)
+            vector_store, storage_context=storage_context, embed_model=self.embed_model)
         return index
 
     def create_collection(self, name, documents, description):
@@ -90,7 +100,7 @@ class Agent:
         storage_context = StorageContext.from_defaults(
             vector_store=vector_store)
         index = VectorStoreIndex.from_documents(
-            documents=documents, storage_context=storage_context, embed_model=self.embed_model_str)
+            documents=documents, storage_context=storage_context, embed_model=self.embed_model)
 
         return index
 
@@ -118,6 +128,7 @@ class Agent:
             tools.append(tool)
         router_retriever = RouterRetriever.from_defaults(
             retriever_tools=tools, llm=self.llm, selector=LLMMultiSelector.from_defaults(llm=self.llm))
+
         """
         need to build a custom retriever that 
         if res := router_retriever.retrieve() == []:
