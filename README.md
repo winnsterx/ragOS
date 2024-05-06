@@ -37,4 +37,9 @@ v0: personalized RAG with local LLM that is actually useful
   - [ ] multiple collections vs larger individual collections
   - [ ] why is the score so low? 
 v1: improved retrieval accuracy and speed
+- [ ] create testing module
+  - [ ] setup testing standards (with same local info, prompts) to track performance
+- [ ] support all file types 
+- [ ] reduce memory requirement 
+  - [ ] docstore + index_store in storage_context both use memory, not persisting to disk. could this cause the excessive memory requirements? but still gotta load it into memory tho...? 
 v2: additional pipelines and data integrations 

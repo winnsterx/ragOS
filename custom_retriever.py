@@ -18,6 +18,7 @@ from llama_index.core.tools import QueryEngineTool, RetrieverTool
 from llama_index.core.callbacks.schema import CBEventType, EventPayload
 from llama_index.core.schema import NodeWithScore, TextNode
 from llama_index.core.postprocessor import LLMRerank
+from llama_index.postprocessor.flag_embedding_reranker import FlagEmbeddingReranker
 from typing import Any, List
 import logging
 import re
@@ -26,10 +27,10 @@ logging.basicConfig(level=logging.INFO)
 
 
 class CustomRetriever(BaseRetriever):
-    def __init__(self, router_retriever, llm, enable_retriever=False) -> None:
-        self.router_retriever = router_retriever
+    def __init__(self, retriever, llm, enable_reranker) -> None:
+        self.retriever = retriever
         self.llm = llm
-        self.enable_retriever = enable_retriever
+        self.enable_reranker = enable_reranker
 
     def parse_choice_select_answer_fn(self, answer, num_choices, raise_error=True):
         print("answer:", answer)
@@ -59,12 +60,20 @@ class CustomRetriever(BaseRetriever):
         TODO: submit PR to selector to handle no indexs were found by LLM selector error
         """
         try:
-            nodes = self.router_retriever._retrieve(query_bundle)
-            print("How many nodes: ", len(nodes))
+            nodes = self.retriever._retrieve(query_bundle)
+            for n in nodes:
+                logger.info("node_str len: %s; node score: %s",
+                            len(n.node.text), n.score)
             if self.enable_reranker:
-                reranker = LLMRerank(
-                    llm=self.llm, top_n=5, parse_choice_select_answer_fn=self.parse_choice_select_answer_fn)
+                reranker = FlagEmbeddingReranker(
+                    top_n=3,
+                    model="BAAI/bge-reranker-large",
+                    use_fp16=False,
+                )
                 nodes = reranker.postprocess_nodes(nodes, query_bundle)
+                for n in nodes:
+                    logger.info("POST_RERANKER: node_str len: %s; node score: %s",
+                                len(n.node.text), n.score)
             return nodes
         except ValueError:
             logger.error(

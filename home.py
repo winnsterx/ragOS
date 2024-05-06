@@ -15,7 +15,7 @@ def write_and_add_msg_to_history(role: str, content: str) -> None:
 
 def initialize_session():
     if "agent" not in st.session_state:
-        st.session_state["agent"] = Agent()
+        st.session_state["agent"] = Agent(enable_reranker=True)
     if "messages" not in st.session_state:
         greeting = "How can I help you?"
         st.session_state["messages"] = [
@@ -60,6 +60,9 @@ with st.sidebar:
         with st.form("Add file"):
             description = st.text_input("describe the file")
             name = st.text_input("name the file")
+            chunk_size = st.text_input("chunk_size")
+            chunk_overlap = st.text_input("chunk_overlap")
+
             file = st.file_uploader(
                 "drop file here", label_visibility="collapsed")
             submitted = st.form_submit_button("Upload!")
@@ -67,13 +70,16 @@ with st.sidebar:
                 if submitted:
                     text = StringIO(file.getvalue().decode("utf-8")).read()
                     st.session_state.agent.create_index_from_file(
-                        text, name, description)
+                        text, name, description, int(chunk_size), int(chunk_overlap))
                     st.session_state.agent.update_router_with_collections()
 
     with st.expander("Current RAG collections in usage"):
         collections = st.session_state.agent.db.list_collections()
         for c in collections:
             st.write(c)
+            if st.button("Delete collection", key=c.name):
+                st.session_state["agent"].delete_collection(c.name)
+                st.session_state.agent.update_router_with_collections()
             st.divider()
 
 for msg in st.session_state["messages"]:
