@@ -1,0 +1,23 @@
+[
+  {
+    "context": "metamorphosis.txt",
+    "prompt": [
+      "who is the main character and what's his personality like",
+      "what exactly happened to the main character"
+    ]
+  },
+  {
+    "context": "elara_story.txt",
+    "prompt": ["what was the first thing the witch said to elara"]
+  },
+  {
+    "context": "nouns_survey.txt",
+    "prompt": [
+      "whats the biggest problems in nouns dao",
+      "summarise the report",
+      "why would someone buy a noun",
+      "what r some projects funded by nouns governacne",
+      "whats FOMO nouns"
+    ]
+  }
+]
