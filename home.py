@@ -1,13 +1,14 @@
 import streamlit as st
 from agent import Agent
 from io import StringIO
+import pandas as pd
 
 
 st.title("🧿 ragOS 🧿")
 st.caption("🚀 Local, personalized chatbot powered by your local LLM")
 
 
-def write_and_add_msg_to_history(role: str, content: str) -> None:
+def write_and_add_msg_to_history(role, content) -> None:
     message = {"role": role, "content": content}
     st.session_state["messages"].append(message)
     st.chat_message(role).write(content)
@@ -15,7 +16,7 @@ def write_and_add_msg_to_history(role: str, content: str) -> None:
 
 def initialize_session():
     if "agent" not in st.session_state:
-        st.session_state["agent"] = Agent(enable_reranker=True)
+        st.session_state["agent"] = Agent(enable_reranker=False)
     if "messages" not in st.session_state:
         greeting = "How can I help you?"
         st.session_state["messages"] = [
@@ -93,10 +94,15 @@ if prompt := st.chat_input():
     write_and_add_msg_to_history("user", prompt)
     response = st.session_state["agent"].chat_engine.chat(prompt)
 
+    df_nodes = []
     for n in response.source_nodes:
-        st.chat_message("assistant").write(n.node.id_)
-        st.chat_message("assistant").write(n.score)
-        st.chat_message("assistant").write(n.node.text)
+        df_nodes.append(
+            {"id": n.node.id_, "score": n.score, "text": n.node.text})
+    df_nodes = pd.DataFrame(df_nodes)
+    write_and_add_msg_to_history("assistant", "Nodes retrieved:")
+    st.table(df_nodes)
+    message = {"role": "assistant", "content": df_nodes}
+    st.session_state["messages"].append(message)
 
     write_and_add_msg_to_history("assistant", response.response)
     # write_and_add_msg_to_history("assistant", "response.response")
